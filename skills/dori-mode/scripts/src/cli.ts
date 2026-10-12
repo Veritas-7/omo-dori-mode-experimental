@@ -134,8 +134,9 @@ try {
       break;
     case "dead-panes": {
       const seen = new Set<string>();
+      const unknown = new Map<string, number>();
       await every(loopMin, async () => {
-        for (const line of await deadPaneTick(run, config, seen, new Date().toISOString().slice(0, 13))) console.log(line);
+        for (const line of await deadPaneTick(run, config, seen, new Date().toISOString().slice(0, 13), unknown)) console.log(line);
       });
       break;
     }

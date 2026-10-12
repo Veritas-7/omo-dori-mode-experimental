@@ -30,6 +30,8 @@ export type Lane = {
   readonly lastReplyAt?: number;
   readonly lastNudgeAt?: number;
   readonly lastAutoReplyAt?: number;
+  /** The [REPORT] line the freshness sweep last posted, so a stale screen is never posted twice. */
+  readonly lastPostedReport?: string;
   readonly receipt?: unknown;
 };
 
