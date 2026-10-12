@@ -27,6 +27,15 @@ export const ALIVE_STATUSES: ReadonlySet<string> = new Set(["idle", "working", "
 export const agentStatus = async (run: Runner, pane: string): Promise<string | undefined> =>
   (await listPanes(run)).find((p) => p.pane_id === pane)?.agent_status;
 
+/** Like agentStatus, but a failed lookup comes back as its error text instead of being swallowed. */
+export const statusLookup = async (run: Runner, pane: string): Promise<{ readonly status?: string; readonly error?: string }> => {
+  try {
+    return { status: await agentStatus(run, pane) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+};
+
 export type Delivery = "delivered" | "unconfirmed" | "failed";
 
 /**
@@ -36,13 +45,16 @@ export type Delivery = "delivered" | "unconfirmed" | "failed";
  */
 export const sendVerified = async (run: Runner, clock: Clock, pane: string, text: string): Promise<Delivery> => {
   if (/`|\$\(/.test(text)) throw new UnsafeTextError("refusing to send text containing a backtick or $(");
-  const before = await agentStatus(run, pane).catch(() => undefined);
+  const before = await statusLookup(run, pane);
+  if (before.error) console.error(`sendVerified ${pane}: status lookup failed before send: ${before.error}`);
   if ((await run(["herdr", "pane", "send-text", pane, text])).code !== 0) return "failed";
   await run(["herdr", "pane", "send-keys", pane, "enter"]);
-  if (before === "working") return "unconfirmed";
+  if (before.status === "working") return "unconfirmed";
   for (let attempt = 0; attempt < 6; attempt++) {
     await clock.sleep(700);
-    if ((await agentStatus(run, pane).catch(() => undefined)) === "working") return "delivered";
+    const after = await statusLookup(run, pane);
+    if (after.error) console.error(`sendVerified ${pane}: status lookup failed: ${after.error}`);
+    if (after.status === "working") return "delivered";
   }
   return "unconfirmed";
 };

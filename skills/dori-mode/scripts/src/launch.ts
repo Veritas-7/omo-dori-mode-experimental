@@ -1,6 +1,6 @@
 import { fill } from "./config.ts";
 import type { FlowDeps } from "./done-flow.ts";
-import { agentStatus, readScreen } from "./panes.ts";
+import { readScreen, statusLookup } from "./panes.ts";
 import { LANE_KEY, type Lane } from "./registry.ts";
 import { iso } from "./run.ts";
 import { doneSyntaxErrors } from "./signals.ts";
@@ -64,9 +64,10 @@ export const launchLane = async (deps: FlowDeps, input: LaunchInput): Promise<{ 
   const screen = await readScreen(deps.run, pane, 40);
   const bad = STARTUP_FAILURE.exec(screen);
   if (bad) return { lane, startup: `STARTUP_ERROR ${input.key} ${pane}: ${bad[0]}` };
-  const status = await agentStatus(deps.run, pane).catch(() => undefined);
+  const { status, error } = await statusLookup(deps.run, pane);
   if (status === "idle" || status === "working") return { lane, startup: `STARTUP_OK ${input.key} ${pane}` };
-  return { lane, startup: `STARTUP_UNCONFIRMED ${input.key} ${pane}: no ready agent status (${status ?? "none"}); last lines: ${lastLines(screen)}` };
+  const why = error ? `status lookup failed: ${error}` : `no ready agent status (${status ?? "none"})`;
+  return { lane, startup: `STARTUP_UNCONFIRMED ${input.key} ${pane}: ${why}; last lines: ${lastLines(screen)}` };
 };
 
 const lastLines = (screen: string): string =>

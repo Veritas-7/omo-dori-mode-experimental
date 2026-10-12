@@ -18,7 +18,7 @@ export const scrubForThread = (line: string, home: string): string =>
     .replace(/`/g, "'")
     .trim();
 
-export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "stale-report"; readonly lane: string; readonly detail: string };
+export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "pending-report" | "stale-report"; readonly lane: string; readonly detail: string };
 
 const lastHeard = (lane: Lane): number => lane.lastReplyAt ?? Date.parse(lane.openedAt);
 
@@ -39,21 +39,22 @@ export const freshnessTick = async (deps: FlowDeps, home: string): Promise<Sweep
     const hook = deps.config.hooks.threadReply;
     if (silentMin >= deps.config.postAfterMin && hook && lane.thread !== "none" && (current.lastAutoReplyAt ?? 0) < heard) {
       const report = lastReportLine(await readScreen(deps.run, lane.pane, 200), lane.key);
-      if (!report) {
-        acts.push({ kind: "no-report", lane: lane.key, detail: "pane has no [REPORT] line" });
+      // The two reads are a full loop interval apart: a line counts only once it is still there on the next tick.
+      const seenBefore = current.lastSeenReport;
+      current = { ...current, lastSeenReport: report ?? undefined };
+      let hold: { kind: SweepAct["kind"]; detail: string } | null = null;
+      if (!report) hold = { kind: "no-report", detail: "pane has no [REPORT] line" };
+      else if (report !== seenBefore) hold = { kind: "pending-report", detail: "a new [REPORT] line; posting once it holds on the next tick" };
+      else if (report === current.lastPostedReport) hold = { kind: "stale-report", detail: "the last [REPORT] line was already posted" };
+      if (hold) {
+        const note = `${hold.kind}|${hold.detail}|${report ?? ""}`;
+        if (note !== current.lastFreshnessNote) acts.push({ kind: hold.kind, lane: lane.key, detail: hold.detail });
+        await deps.registry.write({ ...current, lastFreshnessNote: note });
         continue;
       }
-      if (lastReportLine(await readScreen(deps.run, lane.pane, 200), lane.key) !== report) {
-        acts.push({ kind: "no-report", lane: lane.key, detail: "two screen reads disagree on the last [REPORT] line" });
-        continue;
-      }
-      if (report === current.lastPostedReport) {
-        acts.push({ kind: "stale-report", lane: lane.key, detail: "the last [REPORT] line was already posted" });
-        continue;
-      }
-      const text = `Progress (from the lane's last report): ${scrubForThread(report, home)}`;
+      const text = `Progress (from the lane's last report): ${scrubForThread(report ?? "", home)}`;
       await deps.run(fill(hook, { thread: lane.thread, text, key: lane.key }));
-      await deps.registry.write({ ...current, lastAutoReplyAt: now, lastPostedReport: report });
+      await deps.registry.write({ ...current, lastAutoReplyAt: now, lastPostedReport: report ?? undefined, lastFreshnessNote: undefined });
       acts.push({ kind: "posted", lane: lane.key, detail: text });
     }
   }
