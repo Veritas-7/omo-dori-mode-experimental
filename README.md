@@ -20,6 +20,8 @@ This clones the repo to `~/.dori/src`, links the skill into `~/.agents/skills/do
 
 Then open your agent inside herdr and say "Dori mode".
 
+On subsequent activations the skill restores `dori resume --json` before setup, using a home-scoped checkpoint for the name, onboarding decisions and durable context references. Optional credential argv providers and exclusive monitor locks support fresh-shell restarts without embedding secrets. See [Restarting a Dori](skills/dori-mode/references/resume.md) for setup, migration and monitor ownership.
+
 ## Requirements
 
 - [bun](https://bun.sh) 1.3 or newer, and git

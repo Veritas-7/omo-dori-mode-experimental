@@ -2,6 +2,8 @@
 
 Run these once, in order. Stop and ask the owner wherever a step needs their choice or their hand.
 
+On every later activation, run `dori resume --json` and follow `resume.md` instead. Before treating a missing checkpoint as first setup, migrate any existing config, consent and work references. Never replace a working config with the example just because the agent conversation is new.
+
 ## 1. herdr
 
 herdr is the terminal multiplexer the Dori runs in. Every lane is a herdr tab, and herdr lets you read a pane, type into it and see which process runs there.
@@ -74,3 +76,5 @@ Arm these as persistent monitors in your own session:
 ## 6. First look around
 
 Once the bot is live, explore the machine: running coding-agent sessions, the tools in use, recent logs. Write what you find into memory, and adopt any running lanes with `dori adopt`.
+
+After onboarding, save the name, platform, consent decisions and durable memory/work references with `dori checkpoint --file FILE`. Save updates as they happen so an interrupted session can resume without onboarding again.

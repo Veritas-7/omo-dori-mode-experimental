@@ -2,6 +2,8 @@
 
 Run once, right after the bot greets the owner. The aim is to learn enough about the owner, their work and their company that you can act without asking about basics.
 
+First read `dori resume --json` and existing memory. A saved `complete` or `declined` decision is not an invitation to repeat onboarding. Save consent and per-tool decisions in the checkpoint as they are made, with references to the memory files written below; see `resume.md`.
+
 ## 1. Ask for consent first
 
 Before you read anything, send this (in the owner's language):

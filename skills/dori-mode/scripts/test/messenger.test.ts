@@ -50,6 +50,19 @@ test("a Slack error that is not transient fails at once with the API error, with
   expect(seen).toHaveLength(1);
 });
 
+test("Slack history lookup sends required channel and timestamp as query parameters, not ignored JSON", async () => {
+  // Given an API boundary that only accepts GET query parameters for replies.
+  const { http } = fakeHttp((request) => {
+    const url = new URL(request.url);
+    const accepted = request.method === "GET" && url.searchParams.get("channel") === "D1" && url.searchParams.get("ts") === "10.000001";
+    return ok(accepted ? { ok: true, messages: [{ ts: "11.000001" }] } : { ok: false, error: "invalid_arguments" });
+  });
+  // When the public client requests a thread.
+  const response = await new Slack(http, fakeClock(0), { token: "t" }).call("conversations.replies", { channel: "D1", ts: "10.000001" });
+  // Then the real required parameters reach the API boundary.
+  expect(response.messages).toEqual([{ ts: "11.000001" }]);
+});
+
 test("text carrying a $( substitution is refused before any request goes out, on every platform", async () => {
   const { http, seen } = fakeHttp(() => ok({ ok: true }));
   const clock = sleeps().clock;

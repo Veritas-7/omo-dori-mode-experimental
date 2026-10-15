@@ -57,6 +57,10 @@ Every module takes its HTTP, clock and timers as arguments. That is how the test
 
 ## Commands
 
+### `dori checkpoint --file FILE` / `dori resume --json [--lead-pane PANE]`
+
+Persist and restore the lead's name, onboarding decisions and durable context references. These commands are independent of the current directory and do not replace keyed `dori resume LANE_KEY`. Restore returns lane records, credential availability (never credential values) and monitor argv/filter specifications, but does not start monitors or validate the credential with the messenger. `credentialCommand` optionally supplies JSON credentials when environment variables are missing. See [resume.md](resume.md) for the schema, migration and single-consumer ownership rules.
+
 ### `dori launch <key> --title T --brief FILE --done "..." [--thread REF] [--model M] [--cwd DIR]`
 Opens a lane: appends the footer to the brief, opens a tab, starts the agent, and after 20 seconds checks it: `STARTUP_ERROR` on a known failure in the pane, `STARTUP_OK` only when herdr reports the agent idle or working, and `STARTUP_UNCONFIRMED` (with the last lines) otherwise. Exit 3 on anything but `STARTUP_OK`.
 
@@ -106,12 +110,14 @@ Keeps the account shown as online until stopped.
 - Run one instance per account. Two writers flip each other's presence.
 
 ### `dori inbound slack [--loop MIN]`
-Prints `INBOUND <source> <channel> <thread> <ts> <user> <text>`. It reads from three places, each message once:
+Prints `INBOUND <source> <channel> <thread> <ts> <user> <text>`. User tokens read from three places, each message once:
 - `threads-view`: unread replies in threads the account follows (Slack's own Threads view);
 - `own-thread`: new replies in any thread the Dori posted in, tagged or not;
 - `unread`: DMs, group DMs and channels with unread mentions.
 
 The Dori's own messages and bot messages are skipped. Every message the Dori posts records its thread in `<stateDir>/slack-threads.json`, whichever helper sends it, so a guest's untagged reply under a root posted with a raw API call is still found.
+
+Bot tokens use public conversation history for DMs and mentions plus watched-thread replies, without private user-client APIs. Persisted channel watermarks survive a fresh process; newly discovered channels start at the activation watermark. `INBOUND_READY slack` follows the first successful full poll, not just `auth.test`.
 
 ### `dori transcribe <audio-file>`
 Runs `hooks.transcribe` and prints the transcript. A failed or empty transcription is an error, never an empty message.
