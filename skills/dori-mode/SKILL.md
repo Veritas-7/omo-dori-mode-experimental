@@ -81,6 +81,7 @@ Real work runs in its own herdr tab, called a lane. The protocol, with the reaso
 - Secrets, tokens, internal hostnames and personal data never go into a public issue, PR, gist or message.
 - Build memory as you work and consult it before asking the owner something it already answers.
 - Keep going until the work is done. Stop only when nothing can move without the owner.
+- When the owner says wait, stop or hold on for a lane, pause it with `dori pause <key>` in the same turn. A reply alone leaves it running: the freshness sweep nudges it and its goal keeps continuing. `dori resume <key>` when they say go.
 
 ## Scripts
 
@@ -91,6 +92,7 @@ Real work runs in its own herdr tab, called a lane. The protocol, with the reaso
 | `dori launch` / `dori adopt` | open a lane in a new tab, or register one already running |
 | `dori sync [--write]` | rebuild the registry from live panes, report drift |
 | `dori claim-done` / `dori object-done` / `dori close` | the done flow |
+| `dori pause` / `dori resume` | the owner said wait: no nudges, goal paused, running turn stopped; and back |
 | `dori watch` | the 5-minute auto-close watcher (run it as a persistent monitor) |
 | `dori freshness` | nudge silent lanes, post their last report to their thread |
 | `dori dead-panes` | report agent panes that stopped |

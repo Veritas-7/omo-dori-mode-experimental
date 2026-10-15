@@ -72,6 +72,9 @@ The two halves of the done flow. Both message the lane's pane and check that Ent
 ### `dori close <key> [--note TEXT]`
 Closes a lane now. Refuses (exit 2) unless every `Done =` signal reads back live. On success it marks the thread done through `hooks.threadDone`, closes the tab, and removes the lane's worktrees with a plain `git worktree remove`, which refuses a dirty worktree.
 
+### `dori pause <key> [--note TEXT]` / `dori resume <key> [--note TEXT]`
+`pause` is for when the owner said wait. It moves a `working` lane to `paused` (recorded in its history), sends `/goal pause` to its pane, then sends Escape if a turn is running. The goal is paused first, so stopping the turn cannot hand off to a goal continuation. A paused lane is skipped by `freshness`: no nudge, no post. `resume` moves it back to `working`, sends `/goal resume`, and restarts its quiet time, so a long pause does not turn into an instant nudge. Both print `PAUSED`/`RESUMED` (exit 0). They refuse a lane in any other state (`NOT_PAUSED`/`NOT_RESUMED`, exit 2), and a second `pause` is a no-op.
+
 ### `dori watch`
 Runs forever. Every 30 seconds it prints each new claim once (`LANE_DONE_CLAIMED`). Claims older than `closeAfterMin` are settled: unpushed or uncommitted work and failing signals turn into objections (`LANE_NOT_DONE`); otherwise the lane is closed (`LANE_CLOSED`). The deadline lives in the registry, so a restart picks up where it left off.
 

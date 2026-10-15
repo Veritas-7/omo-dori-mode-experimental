@@ -118,6 +118,7 @@ watcher はレーンを閉じるときに、シェルを通さずこの確認を
 | `dori adopt <key> --pane ID ...` | すでに動いているレーンを登録 |
 | `dori sync [--write]` | レジストリと実際の pane を比べ、ずれを表示 |
 | `dori claim-done` / `object-done` / `close` | 完了フロー |
+| `dori pause` / `resume` | オーナーが「待って」と言ったとき: 声かけなし、ゴール一時停止、実行中のターンを止める。そして再開 |
 | `dori watch` | 自動クローズの watcher。常駐モニターとして動かします |
 | `dori freshness [--loop MIN]` | 静かになったレーンに声をかけ、最後の報告をスレッドに投稿 |
 | `dori dead-panes [--loop MIN]` | 止まったエージェントの pane を報告 |

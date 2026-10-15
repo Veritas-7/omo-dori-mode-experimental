@@ -8,6 +8,7 @@ import { freshnessTick } from "./freshness.ts";
 import { acquireSlot, pidAlive, releaseSlot } from "./heavy-slot.ts";
 import { guardTick, sampleHost } from "./host-guard.ts";
 import { adoptLane, launchLane, LaunchError } from "./launch.ts";
+import { pauseLane, resumeLane } from "./pause.ts";
 import { Registry, statusOf } from "./registry.ts";
 import { realClock, run } from "./run.ts";
 import { syncRegistry } from "./sync.ts";
@@ -30,6 +31,8 @@ const USAGE = `dori <command> [options]
   claim-done [<key>] --evidence TEXT  key defaults to the lane registered for $HERDR_PANE_ID
   object-done <key> --reason TEXT [--reason TEXT ...]
   close  <key> [--note TEXT]           close now (Done signals must read back live)
+  pause  <key> [--note TEXT]           the user said wait: no nudges, goal paused, running turn interrupted
+  resume <key> [--note TEXT]           undo pause: back to working, goal resumed
   watch                                long-running: emits LANE_* lines every 30 s
   freshness [--loop MIN]               nudge silent lanes, post their last report via hooks.threadReply
   dead-panes [--loop MIN]              print DEAD_PANE <id> for stopped agent panes
@@ -120,6 +123,13 @@ try {
       const r = await closeLane(deps, await lane(key ?? die("close needs a lane key")), opt("note") ?? "closed by the lead");
       for (const line of r.lines) console.log(line);
       process.exit(r.closed ? 0 : 2);
+    }
+    case "pause":
+    case "resume": {
+      const act = command === "pause" ? pauseLane : resumeLane;
+      const r = await act(deps, await lane(key ?? die(`${command} needs a lane key`)), opt("note") ?? `${command}d by the lead`);
+      for (const line of r.lines) console.log(line);
+      process.exit(/^(PAUSED|RESUMED) /.test(r.lines[0] ?? "") ? 0 : 2);
     }
     case "watch":
       console.log("LANE_WATCH_READY");

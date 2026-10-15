@@ -118,6 +118,7 @@ The watcher runs each check itself when it closes the lane, with no shell, and n
 | `dori adopt <key> --pane ID ...` | register a lane that's already running |
 | `dori sync [--write]` | registry against live panes, plus drift |
 | `dori claim-done` / `object-done` / `close` | the done flow |
+| `dori pause` / `resume` | the owner said wait: no nudges, goal paused, running turn stopped; and back |
 | `dori watch` | the auto-close watcher; run it as a persistent monitor |
 | `dori freshness [--loop MIN]` | nudge lanes that went quiet, then post their last report to their thread |
 | `dori dead-panes [--loop MIN]` | report agent panes that stopped |

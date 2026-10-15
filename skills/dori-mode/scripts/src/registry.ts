@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 export const LANE_KEY = /^[a-z0-9][a-z0-9._-]{1,60}$/;
 
-export type LaneStatus = "working" | "done-claimed" | "verified-done" | "not-done" | "closed";
+export type LaneStatus = "working" | "paused" | "done-claimed" | "verified-done" | "not-done" | "closed";
 export type Claim = { readonly at: string; readonly evidence: string; readonly emitted?: boolean };
 export type Objection = { readonly at: string; readonly reasons: readonly string[] };
 export type HistoryEntry = { readonly at: string; readonly status: LaneStatus; readonly note: string };
