@@ -31,8 +31,8 @@ const USAGE = `dori <command> [options]
   claim-done [<key>] --evidence TEXT  key defaults to the lane registered for $HERDR_PANE_ID
   object-done <key> --reason TEXT [--reason TEXT ...]
   close  <key> [--note TEXT]           close now (Done signals must read back live)
-  pause  <key> [--note TEXT]           the user said wait: no nudges, goal paused, running turn interrupted
-  resume <key> [--note TEXT]           undo pause: back to working, goal resumed
+  pause  <key> [--note TEXT]           the owner said wait: goal paused (read back), running turn stopped, no nudges; exit 3 if unconfirmed
+  resume <key> [--note TEXT]           undo pause: goal resumed (read back), lane back to its earlier status
   watch                                long-running: emits LANE_* lines every 30 s
   freshness [--loop MIN]               nudge silent lanes, post their last report via hooks.threadReply
   dead-panes [--loop MIN]              print DEAD_PANE <id> for stopped agent panes
@@ -129,7 +129,7 @@ try {
       const act = command === "pause" ? pauseLane : resumeLane;
       const r = await act(deps, await lane(key ?? die(`${command} needs a lane key`)), opt("note") ?? `${command}d by the lead`);
       for (const line of r.lines) console.log(line);
-      process.exit(/^(PAUSED|RESUMED) /.test(r.lines[0] ?? "") ? 0 : 2);
+      process.exit(r.code);
     }
     case "watch":
       console.log("LANE_WATCH_READY");

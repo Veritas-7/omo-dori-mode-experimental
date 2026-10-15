@@ -1,5 +1,6 @@
 import { fill } from "./config.ts";
 import type { FlowDeps } from "./done-flow.ts";
+import { noticeResumedOutside } from "./pause.ts";
 import { readScreen, sendVerified } from "./panes.ts";
 import { type Lane, statusOf } from "./registry.ts";
 
@@ -18,7 +19,7 @@ export const scrubForThread = (line: string, home: string): string =>
     .replace(/`/g, "'")
     .trim();
 
-export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "pending-report" | "stale-report"; readonly lane: string; readonly detail: string };
+export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "pending-report" | "stale-report" | "resumed-outside"; readonly lane: string; readonly detail: string };
 
 const lastHeard = (lane: Lane): number => lane.lastReplyAt ?? Date.parse(lane.openedAt);
 
@@ -26,6 +27,11 @@ export const freshnessTick = async (deps: FlowDeps, home: string): Promise<Sweep
   const acts: SweepAct[] = [];
   const now = deps.clock.now();
   for (const lane of await deps.registry.open()) {
+    if (statusOf(lane) === "paused") {
+      const resumed = await noticeResumedOutside(deps, lane);
+      if (resumed) acts.push({ kind: "resumed-outside", lane: lane.key, detail: `pane working on two ticks; lane back to ${statusOf(resumed)}` });
+      continue;
+    }
     if (statusOf(lane) !== "working" || !lane.pane) continue;
     const heard = lastHeard(lane);
     const silentMin = Math.round((now - heard) / 60_000);

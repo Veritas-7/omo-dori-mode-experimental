@@ -81,7 +81,7 @@ Real work runs in its own herdr tab, called a lane. The protocol, with the reaso
 - Secrets, tokens, internal hostnames and personal data never go into a public issue, PR, gist or message.
 - Build memory as you work and consult it before asking the owner something it already answers.
 - Keep going until the work is done. Stop only when nothing can move without the owner.
-- When the owner says wait, stop or hold on for a lane, pause it with `dori pause <key>` in the same turn. A reply alone leaves it running: the freshness sweep nudges it and its goal keeps continuing. `dori resume <key>` when they say go.
+- When the owner says wait, stop or hold on, pause the lane with `dori pause <key>` in the same turn; if they name no lane, pause every working lane on that topic and say which. A reply alone leaves it running: the freshness sweep nudges it and its goal keeps continuing. `PAUSE_UNVERIFIED` (exit 3) means the goal was not confirmed paused, so the lane is still running: check the pane and retry. `dori resume <key>` when they say go.
 
 ## Scripts
 
