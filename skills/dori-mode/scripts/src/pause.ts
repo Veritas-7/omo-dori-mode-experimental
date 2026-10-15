@@ -12,8 +12,9 @@ export type PauseResult = { readonly lane: Lane; readonly lines: readonly string
 const PAUSABLE: ReadonlySet<LaneStatus> = new Set(["working", "not-done"]);
 // What the goal command prints (senpi goal/command-registration.ts): its new status, or that there is no goal,
 // in which case nothing can auto-continue either.
-const PAUSED_SHOWN = /Goal paused|no goal exists/g;
-const RESUMED_SHOWN = /Goal active|no goal exists/g;
+// Whole lines only, so a lane's own output that merely mentions them does not count.
+const PAUSED_SHOWN = /^\s*(?:Goal paused|cannot update goal: no goal exists)\s*$/gm;
+const RESUMED_SHOWN = /^\s*(?:Goal active|cannot update goal: no goal exists)\s*$/gm;
 const READ_BACK_TRIES = 8;
 
 const count = (screen: string, shown: RegExp): number => screen.match(shown)?.length ?? 0;
@@ -29,13 +30,8 @@ const goalCommand = async (deps: FlowDeps, pane: string, text: string, shown: Re
   return "unconfirmed";
 };
 
-/** The status a paused lane had before its pause, from its history. */
-const beforePause = (lane: Lane): LaneStatus => {
-  const history = lane.history ?? [];
-  const pausedAt = history.findLastIndex((entry) => entry.status === "paused");
-  const prior = pausedAt > 0 ? history[pausedAt - 1]?.status : undefined;
-  return prior && PAUSABLE.has(prior) ? prior : "working";
-};
+/** The status a paused lane had before its pause. */
+const beforePause = (lane: Lane): LaneStatus => (lane.pausedFrom && PAUSABLE.has(lane.pausedFrom) ? lane.pausedFrom : "working");
 
 export const pauseLane = async (deps: FlowDeps, lane: Lane, note: string): Promise<PauseResult> => {
   const status = statusOf(lane);
@@ -46,8 +42,7 @@ export const pauseLane = async (deps: FlowDeps, lane: Lane, note: string): Promi
   const goal = await goalCommand(deps, lane.pane, "/goal pause", PAUSED_SHOWN);
   if (goal !== "confirmed") return { lane, lines: [`PAUSE_UNVERIFIED ${lane.key} /goal pause ${goal}; lane left ${status}`], code: 3 };
   const at = new Date(deps.clock.now()).toISOString();
-  // A lane that is working at the pause is the one wanted quiet; record its earlier status for resume.
-  const paused = withStatus(status === "working" ? lane : withStatus(lane, status, "before pause", at), "paused", note, at, { pausedSeenWorking: undefined });
+  const paused = withStatus(lane, "paused", note, at, { pausedFrom: status, pausedSeenWorking: undefined });
   await deps.registry.write(paused);
   const running = (await statusLookup(deps.run, lane.pane)).status === "working";
   if (running) await deps.run(["herdr", "pane", "send-keys", lane.pane, "escape"]);
@@ -61,16 +56,20 @@ export const resumeLane = async (deps: FlowDeps, lane: Lane, note: string): Prom
   if (goal !== "confirmed") return { lane, lines: [`RESUME_UNVERIFIED ${lane.key} /goal resume ${goal}; lane left paused`], code: 3 };
   const now = deps.clock.now();
   // Quiet time starts again at the resume: a long pause must not turn into an instant nudge.
-  const resumed = withStatus(lane, beforePause(lane), note, new Date(now).toISOString(), { lastReplyAt: now, pausedSeenWorking: undefined });
+  const resumed = withStatus(lane, beforePause(lane), note, new Date(now).toISOString(), { lastReplyAt: now, pausedFrom: undefined, pausedSeenWorking: undefined });
   await deps.registry.write(resumed);
   return { lane: resumed, lines: [`RESUMED ${lane.key} as ${statusOf(resumed)}, goal resumed`], code: 0 };
 };
 
+export type PausedCheck = { readonly lane: Lane; readonly outcome: "working-while-paused" } | null;
+
 /**
- * A paused lane whose pane reads working on two ticks in a row was resumed outside `dori resume` (the owner
- * typed in it): the registry follows reality, so the lane is nudged and posted again.
+ * Resume is explicit only: `dori resume`, on the owner's word. Activity never ends a pause, because a paused
+ * lane can still be woken (a background result, a queued message, a turn after Escape) and its owner said
+ * wait. A paused lane whose pane reads working on two ticks in a row is reported so the lead can ask; it
+ * stays paused.
  */
-export const noticeResumedOutside = async (deps: FlowDeps, lane: Lane): Promise<Lane | null> => {
+export const checkPausedLane = async (deps: FlowDeps, lane: Lane): Promise<PausedCheck> => {
   if (statusOf(lane) !== "paused" || !lane.pane) return null;
   const working = (await statusLookup(deps.run, lane.pane)).status === "working";
   if (!working) {
@@ -81,8 +80,5 @@ export const noticeResumedOutside = async (deps: FlowDeps, lane: Lane): Promise<
     await deps.registry.write({ ...lane, pausedSeenWorking: true });
     return null;
   }
-  const now = deps.clock.now();
-  const resumed = withStatus(lane, beforePause(lane), "resumed outside dori resume (pane working on two ticks)", new Date(now).toISOString(), { lastReplyAt: now, pausedSeenWorking: undefined });
-  await deps.registry.write(resumed);
-  return resumed;
+  return { lane, outcome: "working-while-paused" };
 };

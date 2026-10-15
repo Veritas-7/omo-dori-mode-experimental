@@ -38,6 +38,8 @@ export type Lane = {
   readonly lastFreshnessNote?: string;
   /** A paused lane whose pane read working on the previous freshness tick (two in a row means it resumed). */
   readonly pausedSeenWorking?: boolean;
+  /** The status a paused lane had before it was paused; `resume` restores it. */
+  readonly pausedFrom?: LaneStatus;
   readonly receipt?: unknown;
 };
 

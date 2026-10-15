@@ -107,14 +107,24 @@ test("resume of a working lane restarts the quiet clock: no nudge until nudgeAft
   expect((await freshnessTick(deps(T0 + 106 * MIN), "/home/test")).map((a) => a.kind)).toEqual(["nudged"]);
 });
 
-test("a paused lane whose pane works on two ticks in a row was resumed outside dori resume and goes back to working", async () => {
-  await deps(T0).registry.write({ ...working, status: "paused" });
+test("a lane paused mid-turn (Escape) and then woken stays paused: resume is dori resume only, whatever the screen shows", async () => {
+  paneStatus("working");
+  await deps(T0).registry.write(working);
+  paneSays("❯ ", "Goal paused\n❯ ");
+  await pauseLane(deps(T0 + MIN), working, "owner said wait");
+  expect(escapes()).toHaveLength(1);
+  // Woken afterwards (a background result), still running on two ticks, even with a goal line that reads active.
+  world.screens = [];
+  world.screen = "Goal active\nworking on the background result\n";
   paneStatus("working");
   expect(await freshnessTick(deps(T0 + 5 * MIN), "/home/test")).toEqual([]);
-  expect(statusOf((await stored()) as Lane)).toBe("paused");
   const second = await freshnessTick(deps(T0 + 10 * MIN), "/home/test");
-  expect(second.map((a) => a.kind)).toEqual(["resumed-outside"]);
-  expect(statusOf((await stored()) as Lane)).toBe("working");
+  expect(second.map((a) => a.kind)).toEqual(["working-while-paused"]);
+  expect(await freshnessTick(deps(T0 + 15 * MIN), "/home/test")).toEqual([]);
+  expect(await freshnessTick(deps(T0 + 60 * MIN), "/home/test")).toEqual([]);
+  const lane = await stored();
+  expect(lane && statusOf(lane)).toBe("paused");
+  expect(sent(world).filter((text) => text.startsWith("[LEAD]"))).toEqual([]);
 });
 
 test("one working tick between idle ones does not count as a resume", async () => {

@@ -1,6 +1,6 @@
 import { fill } from "./config.ts";
 import type { FlowDeps } from "./done-flow.ts";
-import { noticeResumedOutside } from "./pause.ts";
+import { checkPausedLane } from "./pause.ts";
 import { readScreen, sendVerified } from "./panes.ts";
 import { type Lane, statusOf } from "./registry.ts";
 
@@ -19,7 +19,7 @@ export const scrubForThread = (line: string, home: string): string =>
     .replace(/`/g, "'")
     .trim();
 
-export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "pending-report" | "stale-report" | "resumed-outside"; readonly lane: string; readonly detail: string };
+export type SweepAct = { readonly kind: "nudged" | "posted" | "no-report" | "pending-report" | "stale-report" | "working-while-paused"; readonly lane: string; readonly detail: string };
 
 const lastHeard = (lane: Lane): number => lane.lastReplyAt ?? Date.parse(lane.openedAt);
 
@@ -28,8 +28,12 @@ export const freshnessTick = async (deps: FlowDeps, home: string): Promise<Sweep
   const now = deps.clock.now();
   for (const lane of await deps.registry.open()) {
     if (statusOf(lane) === "paused") {
-      const resumed = await noticeResumedOutside(deps, lane);
-      if (resumed) acts.push({ kind: "resumed-outside", lane: lane.key, detail: `pane working on two ticks; lane back to ${statusOf(resumed)}` });
+      const checked = await checkPausedLane(deps, lane);
+      if (checked && checked.lane.lastFreshnessNote !== "working-while-paused") {
+        // Reported once per stretch, so its owner can decide; the lane stays paused.
+        await deps.registry.write({ ...checked.lane, lastFreshnessNote: "working-while-paused" });
+        acts.push({ kind: "working-while-paused", lane: lane.key, detail: "paused lane is working on two ticks; left paused (resume is dori resume only)" });
+      }
       continue;
     }
     if (statusOf(lane) !== "working" || !lane.pane) continue;
