@@ -48,6 +48,16 @@ export class ThreadLedger {
 
   async list(): Promise<LedgerThread[]> {
     await this.load();
-    return [...this.threads.values()];
+    return [...this.threads.values()].filter((thread) => thread.rootTs !== "0");
+  }
+
+  /** Slack message timestamps are positive; root "0" stores a channel watermark. */
+  async channelSeen(channel: string): Promise<string | undefined> {
+    await this.load();
+    return this.threads.get(this.key(channel, "0"))?.seenTs;
+  }
+
+  async markChannelSeen(channel: string, ts: string): Promise<void> {
+    await this.record(channel, "0", ts);
   }
 }

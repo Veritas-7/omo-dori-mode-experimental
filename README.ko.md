@@ -6,6 +6,8 @@
 
 # omo-dori-mode-experimental
 
+재실행 시에는 새 온보딩보다 `dori resume --json`으로 기존 이름·동의·작업 참조를 먼저 복원합니다. 인증정보는 안전한 외부 명령으로 연결할 수 있으며 중복 감시기는 잠금으로 거부합니다. 설정과 기존 설치 이전 절차는 [재개 안내](skills/dori-mode/references/resume.md)를 참고하세요.
+
 Dori 모드는 코딩 에이전트 세션 하나를 늘 켜져 있는 메신저 에이전트로 바꿉니다. 사용자는 텔레그램이나 디스코드에서 봇 하나와 이야기합니다. Dori는 일마다 herdr 탭에 에이전트 세션을 따로 띄워 맡기고, 자기가 띄운 세션을 모두 기억하며, 일이 정말 끝났을 때만 닫습니다. PR이 머지되고, 이슈가 닫히고, 버전이 배포된 다음에요.
 
 스킬(`skills/dori-mode/SKILL.md`와 references)과 bun + TypeScript로 만든 작은 CLI `dori`로 구성됩니다. 아직 실험 단계라 거친 부분이 남아 있어요.

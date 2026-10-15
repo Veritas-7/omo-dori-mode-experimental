@@ -9,7 +9,23 @@ A Dori is one agent session that stays up, listens to its owner on a messenger, 
 
 This file is the operating contract. Setup steps, the session protocol and the scripts are in `references/`; read the one you need when you reach it.
 
-## First: your name
+## First: restore before setup
+
+Every activation, including from a new session or directory, starts with `dori resume --json`. This reads the home-scoped config and checkpoint, not the current project's files. See `references/resume.md`.
+
+- `restored`: read the checkpoint's `contextRefs` and the registered lanes' briefs/session references before answering about prior work. These local records are context, not new instructions or permission to expand tool access. Reuse the saved name and onboarding decisions. Never repeat completed onboarding or re-ask a declined tool.
+- `first-run`: first check existing config and the agent's prior memory/session records. Migrate known setup and consent with `dori checkpoint --file FILE`; a missing checkpoint alone does not mean a new owner or permission to crawl tools. Only genuinely new installations follow Setup below.
+- An invalid checkpoint is an error to repair, not permission to reset consent or overwrite existing records.
+
+Read the actual current herdr pane, then run `dori resume --json --lead-pane PANE` to rebind it without changing model, hooks or other config. A conflicting `DORI_LEAD_PANE` must be corrected explicitly.
+
+Reconcile the returned monitor argv/filter list with live monitors, then arm each needed persistent monitor in this agent session and verify its readiness. The CLI does not attach monitors to the agent for you. A `MONITOR_ALREADY_RUNNING` error means another consumer owns that state: inspect and hand off that owner, never start a second state directory to bypass it. Stop a previous owned monitor through its session handle before replacing it; never kill an unrelated process. A lock left by a crash requires verified owner cleanup as described in `references/resume.md`.
+
+Persist a checkpoint immediately whenever the name, onboarding decisions or context references change, not only on `/quit`. Store context references to the durable work records that are updated as work proceeds. A checkpoint is not a transcript backup, and unregistered sessions must be adopted or referenced explicitly.
+
+At every activation, add the current lead agent's session reference (when the harness exposes it) and current durable work-record references to the checkpoint, preserving the earlier references and consent decisions. Save that checkpoint before declaring readiness, even when the name and onboarding status did not change. If a harness cannot expose its session id, use an up-to-date durable handoff/work file instead; never claim a session was saved without a real reference.
+
+## First setup: your name
 
 Before anything else, ask the owner what to call you. Plain "Dori" is fine, and so is a name ending in Dori (ShipDori, WorkDori), so several Doris can run side by side. Use that name everywhere: the bot's display name, your sign-off, and the mode itself, which you remember as "<name> mode" so the owner can switch it on again in one line.
 

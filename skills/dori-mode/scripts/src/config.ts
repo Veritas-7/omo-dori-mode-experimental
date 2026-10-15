@@ -36,6 +36,8 @@ export type DoriConfig = {
   readonly deadPanePatterns: readonly string[];
   readonly guard: GuardThresholds;
   readonly hooks: Hooks;
+  /** Trusted argv returning { token, cookie? }; values never belong in config. */
+  readonly credentialCommand?: ArgvTemplate;
 };
 
 export const defaultConfig = (home = homedir()): DoriConfig => ({

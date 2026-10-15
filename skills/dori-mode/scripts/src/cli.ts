@@ -1,7 +1,12 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { dirname } from "node:path";
+import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
-import { loadConfig } from "./config.ts";
+import { configPath, loadConfig } from "./config.ts";
+import { CheckpointError, readCheckpoint, saveCheckpoint } from "./checkpoint.ts";
+import { CredentialError, resolveCredentials } from "./credentials.ts";
+import { acquireMonitorLock, MonitorLockError, readMonitorLock } from "./monitor-lock.ts";
 import { deadPaneTick, newDeadPaneState } from "./dead-panes.ts";
 import { claimDone, closeLane, type FlowDeps, objectDone, watchTick } from "./done-flow.ts";
 import { freshnessTick } from "./freshness.ts";
@@ -25,6 +30,8 @@ import { transcribe, TranscriptionError } from "./messenger/voice.ts";
 
 const USAGE = `dori <command> [options]
 
+  checkpoint --file FILE              save name, onboarding and context references (no credentials)
+  resume --json [--lead-pane PANE]     restore the lead from any directory; does not start monitors
   launch <key> --title T --brief FILE --done "merged o/r#N; closed o/r#M" [--thread REF] [--model M] [--cwd DIR]
   adopt  <key> --pane ID --title T --brief FILE --done "..." [--thread REF]
   sync   [--write]                     registry vs live panes; read-only unless --write
@@ -64,6 +71,7 @@ const flags = parseArgs({
     model: { type: "string" }, cwd: { type: "string" }, pane: { type: "string" }, evidence: { type: "string" },
     reason: { type: "string", multiple: true }, note: { type: "string" }, write: { type: "boolean" }, loop: { type: "string" },
     to: { type: "string" }, text: { type: "string" }, edit: { type: "string" },
+    file: { type: "string" }, json: { type: "boolean" }, "lead-pane": { type: "string" },
   },
 });
 const opt = (name: string): string | undefined => {
@@ -90,7 +98,34 @@ const every = async (minutes: number, tick: () => Promise<void>): Promise<void> 
 };
 
 try {
+  const platformMonitor = command === "inbound" || command === "presence";
+  if (platformMonitor && (flags.positionals.length !== 1 ||
+    (command === "inbound" ? key !== "slack" : key !== "slack" && key !== "discord"))) {
+    die("MONITOR_ARGUMENT_ERROR invalid monitor platform", 2);
+  }
+  if (["watch", "freshness", "dead-panes", "guard"].includes(command) && flags.positionals.length) {
+    die("MONITOR_ARGUMENT_ERROR monitor does not accept positional arguments", 2);
+  }
+  const monitorKey = ["watch", "presence", "inbound", "freshness", "dead-panes", "guard"].includes(command)
+    ? platformMonitor ? `${command}-${key}` : command : undefined;
+  if (monitorKey) {
+    const lock = acquireMonitorLock(config.stateDir, monitorKey);
+    process.once("exit", lock.release);
+    process.once("SIGINT", () => process.exit(130));
+    process.once("SIGTERM", () => process.exit(0));
+  }
   switch (command) {
+    case "checkpoint": {
+      let document: unknown;
+      try {
+        document = JSON.parse(await readFile(need("file"), "utf8"));
+      } catch {
+        throw new CheckpointError("Cannot read checkpoint JSON");
+      }
+      await saveCheckpoint(config.stateDir, document);
+      console.log("CHECKPOINT_SAVED");
+      break;
+    }
     case "launch": {
       const r = await launchLane(deps, { key: key ?? "", title: need("title"), brief: need("brief"), done: need("done"), thread: opt("thread"), model: opt("model"), cwd: opt("cwd") });
       console.log(`LAUNCHED ${r.lane.key} pane=${r.lane.pane} tab=${r.lane.tab ?? "?"}`);
@@ -126,6 +161,46 @@ try {
     }
     case "pause":
     case "resume": {
+      if (command === "resume" && !key && flags.values.json) {
+        const checkpoint = await readCheckpoint(config.stateDir);
+        let leadPane = config.leadPane;
+        const requestedPane = opt("lead-pane");
+        if (requestedPane) {
+          if (process.env.DORI_LEAD_PANE && process.env.DORI_LEAD_PANE !== requestedPane) die("DORI_LEAD_PANE conflicts with --lead-pane");
+          if (!checkpoint) die("Save a checkpoint before rebinding the lead pane");
+          const path = configPath();
+          const original: unknown = JSON.parse(await readFile(path, "utf8"));
+          if (!original || typeof original !== "object" || Array.isArray(original)) throw new CheckpointError("Invalid config object");
+          const temp = `${path}.${process.pid}.tmp`;
+          try {
+            await writeFile(temp, JSON.stringify({ ...original, leadPane: requestedPane }, null, 2) + "\n", { flag: "wx", mode: (await stat(path)).mode & 0o777 });
+            await rename(temp, path);
+          } finally {
+            await rm(temp, { force: true });
+          }
+          leadPane = requestedPane;
+        }
+        let auth: { status: "resolved" | "error" } | null = null;
+        if (checkpoint) {
+          try {
+            await resolveCredentials(checkpoint.platform, config.credentialCommand, process.env, run, dirname(configPath()));
+            auth = { status: "resolved" };
+          } catch (e) {
+            if (!(e instanceof CredentialError)) throw e;
+            auth = { status: "error" };
+          }
+        }
+        const monitors = [
+          { key: "watch", argv: ["dori", "watch"], filter: "^LANE_" },
+          { key: "freshness", argv: ["dori", "freshness", "--loop", "5"], filter: "^(FRESHNESS_READY|NUDGED|POSTED|NO-REPORT|PENDING-REPORT|STALE-REPORT|WORKING-WHILE-PAUSED|WARN)" },
+          { key: "dead-panes", argv: ["dori", "dead-panes", "--loop", "3"], filter: "^(DEAD_PANES_READY|DEAD_PANE|UNRECOGNISED_PANE|WARN)" },
+          { key: "guard", argv: ["dori", "guard", "--loop", "1"], filter: "^HOST_GUARD" },
+          ...(checkpoint?.platform === "slack" ? [{ key: "inbound-slack", argv: ["dori", "inbound", "slack", "--loop", "1"], filter: "^(INBOUND|WARN)" }] : []),
+        ];
+        console.log(JSON.stringify({ schemaVersion: 1, status: checkpoint ? "restored" : "first-run", checkpoint, leadPane, lanes: await deps.registry.list(), auth,
+          monitors: monitors.map((monitor) => ({ ...monitor, owner: readMonitorLock(config.stateDir, monitor.key) })) }, null, 2));
+        break;
+      }
       const act = command === "pause" ? pauseLane : resumeLane;
       const r = await act(deps, await lane(key ?? die(`${command} needs a lane key`)), opt("note") ?? `${command}d by the lead`);
       for (const line of r.lines) console.log(line);
@@ -138,11 +213,13 @@ try {
         await Bun.sleep(30_000);
       }
     case "freshness":
+      console.log("FRESHNESS_READY");
       await every(loopMin, async () => {
         for (const a of await freshnessTick(deps, process.env.HOME ?? "")) console.log(`${a.kind.toUpperCase()} ${a.lane} ${a.detail}`);
       });
       break;
     case "dead-panes": {
+      console.log("DEAD_PANES_READY");
       const seen = new Set<string>();
       const paneState = newDeadPaneState();
       await every(loopMin, async () => {
@@ -184,18 +261,19 @@ try {
       const text = need("text");
       const thread = opt("thread");
       const edit = opt("edit");
-      const token = (name: string) => process.env[name] ?? die(`${name} is not set`);
+      if (platform !== "slack" && platform !== "telegram" && platform !== "discord") throw new CredentialError("send needs slack, telegram or discord");
+      const auth = await resolveCredentials(platform, config.credentialCommand, process.env, run, dirname(configPath()));
       if (platform === "slack") {
-        const slack = new Slack(fetchHttp, realClock, { token: token("DORI_SLACK_TOKEN"), cookie: process.env.DORI_SLACK_COOKIE }, undefined, new ThreadLedger(`${config.stateDir}/slack-threads.json`));
+        const slack = new Slack(fetchHttp, realClock, auth, undefined, new ThreadLedger(`${config.stateDir}/slack-threads.json`));
         if (edit) await slack.edit(to, edit, text);
         else console.log(`SENT ${(await slack.post(to, text, thread)).ts}`);
       } else if (platform === "telegram") {
-        const tg = new Telegram(fetchHttp, realClock, token("DORI_TELEGRAM_TOKEN"));
+        const tg = new Telegram(fetchHttp, realClock, auth.token);
         const target = { chatId: to, ...(thread ? { threadId: Number(thread) } : {}) };
         if (edit) await tg.edit(target, Number(edit), text);
         else console.log(`SENT ${await tg.send(target, text)}`);
       } else if (platform === "discord") {
-        const dc = new Discord(fetchHttp, realClock, token("DORI_DISCORD_TOKEN"));
+        const dc = new Discord(fetchHttp, realClock, auth.token);
         if (edit) await dc.edit(to, edit, text);
         else console.log(`SENT ${await dc.send(thread ?? to, text)}`);
       } else die(`unknown platform ${platform}`);
@@ -203,16 +281,18 @@ try {
     }
     case "presence": {
       if (key === "slack") {
-        const auth = { token: process.env.DORI_SLACK_TOKEN ?? die("DORI_SLACK_TOKEN is not set"), cookie: process.env.DORI_SLACK_COOKIE ?? die("DORI_SLACK_COOKIE is not set (user-token presence needs the d cookie)") };
+        const auth = await resolveCredentials("slack", config.credentialCommand, process.env, run, dirname(configPath()), true);
+        const cookie = auth.cookie;
+        if (!cookie) throw new CredentialError("Slack user-token presence requires a cookie");
         const p = slackPresence(new Slack(fetchHttp, realClock, auth), (url, headers) => {
           const options: Bun.WebSocketOptions = { headers: { ...headers } };
           const ws = new WebSocket(url, options);
           return { isOpen: () => ws.readyState === WebSocket.OPEN, send: (f) => ws.send(f), close: () => ws.close() };
-        }, auth);
+        }, { token: auth.token, cookie });
         console.log("PRESENCE_READY slack");
         await every(1, async () => console.log(`PRESENCE slack ${await p.hold()}`));
       } else if (key === "discord") {
-        const token = process.env.DORI_DISCORD_TOKEN ?? die("DORI_DISCORD_TOKEN is not set");
+        const { token } = await resolveCredentials("discord", config.credentialCommand, process.env, run, dirname(configPath()));
         discordPresence(() => {
           const ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json");
           let handler: (d: string) => void = () => {};
@@ -226,14 +306,20 @@ try {
     }
     case "inbound": {
       if (key !== "slack") die("inbound supports slack");
-      const auth = { token: process.env.DORI_SLACK_TOKEN ?? die("DORI_SLACK_TOKEN is not set"), cookie: process.env.DORI_SLACK_COOKIE };
+      const auth = await resolveCredentials("slack", config.credentialCommand, process.env, run, dirname(configPath()));
       const ledger = new ThreadLedger(`${config.stateDir}/slack-threads.json`);
       const slack = new Slack(fetchHttp, realClock, auth, undefined, ledger);
       const me = String((await slack.call("auth.test", {})).user_id ?? die("auth.test returned no user_id"));
+      const since = String(Date.now() / 1000);
+      const receive = async () => {
+        for (const i of await pollSlackInbound(slack, ledger, { selfUserId: me, botToken: auth.token.startsWith("xoxb-"), since })) console.log(`INBOUND ${i.source} ${i.channel} ${i.threadTs ?? "-"} ${i.ts || "-"} ${i.user ?? "-"} ${JSON.stringify((i.text ?? "").slice(0, 200))}`);
+      };
+      await receive();
       console.log("INBOUND_READY slack");
-      await every(loopMin, async () => {
-        for (const i of await pollSlackInbound(slack, ledger, { selfUserId: me })) console.log(`INBOUND ${i.source} ${i.channel} ${i.threadTs ?? "-"} ${i.ts || "-"} ${i.user ?? "-"} ${JSON.stringify((i.text ?? "").slice(0, 200))}`);
-      });
+      if (loopMin > 0) {
+        await Bun.sleep(loopMin * 60_000);
+        await every(loopMin, receive);
+      }
       break;
     }
     case "transcribe":
@@ -244,6 +330,6 @@ try {
       process.exit(command ? 1 : 0);
   }
 } catch (e) {
-  if (e instanceof LaunchError || e instanceof UnsafeMessageError || e instanceof MessengerError || e instanceof TranscriptionError) die(e.message);
+  if (e instanceof LaunchError || e instanceof UnsafeMessageError || e instanceof MessengerError || e instanceof TranscriptionError || e instanceof CheckpointError || e instanceof CredentialError || e instanceof MonitorLockError) die(e.message);
   throw e;
 }

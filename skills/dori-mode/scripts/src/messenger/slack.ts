@@ -23,7 +23,10 @@ export class Slack {
   }
 
   async call(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const res = await withBackoff(this.http, this.clock, { method: "POST", url: `${this.base}/${method}`, headers: this.headers(true), body: JSON.stringify(params) });
+    const query = ["auth.test", "users.conversations", "conversations.history", "conversations.replies", "subscriptions.thread.getView", "client.counts"].includes(method);
+    const res = await withBackoff(this.http, this.clock, query
+      ? { method: "GET", url: `${this.base}/${method}?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]): [string, string] => [key, String(value)]))}`, headers: this.headers(false) }
+      : { method: "POST", url: `${this.base}/${method}`, headers: this.headers(true), body: JSON.stringify(params) });
     const body = JSON.parse(res.body || "{}") as Record<string, unknown>;
     if (res.status !== 200 || body.ok !== true) throw new MessengerError(`slack ${method}: ${String(body.error ?? res.status)}`, res.status, String(body.error ?? ""));
     if (this.ledger && method === "chat.postMessage" && typeof body.ts === "string") {
