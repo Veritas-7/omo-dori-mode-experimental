@@ -42,7 +42,7 @@ export const pauseLane = async (deps: FlowDeps, lane: Lane, note: string): Promi
   const goal = await goalCommand(deps, lane.pane, "/goal pause", PAUSED_SHOWN);
   if (goal !== "confirmed") return { lane, lines: [`PAUSE_UNVERIFIED ${lane.key} /goal pause ${goal}; lane left ${status}`], code: 3 };
   const at = new Date(deps.clock.now()).toISOString();
-  const paused = withStatus(lane, "paused", note, at, { pausedFrom: status, pausedSeenWorking: undefined });
+  const paused = withStatus(lane, "paused", note, at, { pausedFrom: status, pausedSeenWorking: undefined, lastFreshnessNote: undefined });
   await deps.registry.write(paused);
   const running = (await statusLookup(deps.run, lane.pane)).status === "working";
   if (running) await deps.run(["herdr", "pane", "send-keys", lane.pane, "escape"]);
@@ -56,7 +56,7 @@ export const resumeLane = async (deps: FlowDeps, lane: Lane, note: string): Prom
   if (goal !== "confirmed") return { lane, lines: [`RESUME_UNVERIFIED ${lane.key} /goal resume ${goal}; lane left paused`], code: 3 };
   const now = deps.clock.now();
   // Quiet time starts again at the resume: a long pause must not turn into an instant nudge.
-  const resumed = withStatus(lane, beforePause(lane), note, new Date(now).toISOString(), { lastReplyAt: now, pausedFrom: undefined, pausedSeenWorking: undefined });
+  const resumed = withStatus(lane, beforePause(lane), note, new Date(now).toISOString(), { lastReplyAt: now, pausedFrom: undefined, pausedSeenWorking: undefined, lastFreshnessNote: undefined });
   await deps.registry.write(resumed);
   return { lane: resumed, lines: [`RESUMED ${lane.key} as ${statusOf(resumed)}, goal resumed`], code: 0 };
 };
@@ -73,7 +73,8 @@ export const checkPausedLane = async (deps: FlowDeps, lane: Lane): Promise<Pause
   if (statusOf(lane) !== "paused" || !lane.pane) return null;
   const working = (await statusLookup(deps.run, lane.pane)).status === "working";
   if (!working) {
-    if (lane.pausedSeenWorking) await deps.registry.write({ ...lane, pausedSeenWorking: undefined });
+    // Idle again: the next working stretch is new information and is reported again.
+    if (lane.pausedSeenWorking || lane.lastFreshnessNote) await deps.registry.write({ ...lane, pausedSeenWorking: undefined, lastFreshnessNote: undefined });
     return null;
   }
   if (!lane.pausedSeenWorking) {

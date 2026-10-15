@@ -36,7 +36,7 @@ export type Lane = {
   readonly lastSeenReport?: string;
   /** The last held-back freshness outcome, so a quiet lane logs each state change once, not every tick. */
   readonly lastFreshnessNote?: string;
-  /** A paused lane whose pane read working on the previous freshness tick (two in a row means it resumed). */
+  /** A paused lane whose pane read working on the previous freshness tick (two in a row is reported, never a resume). */
   readonly pausedSeenWorking?: boolean;
   /** The status a paused lane had before it was paused; `resume` restores it. */
   readonly pausedFrom?: LaneStatus;

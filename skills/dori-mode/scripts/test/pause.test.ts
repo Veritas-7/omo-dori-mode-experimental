@@ -146,3 +146,36 @@ test("pause and resume refuse lanes in other states with exit 2, and a lane with
   expect((await pauseLane(deps(T0), paneless, "wait")).code).toBe(3);
   expect(sent(world)).toEqual([]);
 });
+
+test("every wake of a paused lane is reported, across a resume and a second pause", async () => {
+  await deps(T0).registry.write(working);
+  paneSays("❯ ", "Goal paused\n❯ ");
+  let lane = (await pauseLane(deps(T0 + MIN), working, "wait")).lane;
+  paneStatus("working");
+  await freshnessTick(deps(T0 + 5 * MIN), "/home/test");
+  expect((await freshnessTick(deps(T0 + 10 * MIN), "/home/test")).map((a) => a.kind)).toEqual(["working-while-paused"]);
+  paneStatus("idle");
+  paneSays("❯ ", "Goal active\n❯ ");
+  lane = (await resumeLane(deps(T0 + 11 * MIN), (await stored()) as Lane, "go")).lane;
+  paneSays("❯ ", "Goal paused\n❯ ");
+  await pauseLane(deps(T0 + 12 * MIN), lane, "wait again");
+  world.screens = [];
+  paneStatus("working");
+  await freshnessTick(deps(T0 + 15 * MIN), "/home/test");
+  expect((await freshnessTick(deps(T0 + 20 * MIN), "/home/test")).map((a) => a.kind)).toEqual(["working-while-paused"]);
+});
+
+test("a paused lane that goes idle and is woken again is reported again", async () => {
+  await deps(T0).registry.write({ ...working, status: "paused" });
+  paneStatus("working");
+  await freshnessTick(deps(T0 + 5 * MIN), "/home/test");
+  expect((await freshnessTick(deps(T0 + 10 * MIN), "/home/test")).map((a) => a.kind)).toEqual(["working-while-paused"]);
+  expect(await freshnessTick(deps(T0 + 15 * MIN), "/home/test")).toEqual([]);
+  paneStatus("idle");
+  await freshnessTick(deps(T0 + 20 * MIN), "/home/test");
+  paneStatus("working");
+  await freshnessTick(deps(T0 + 25 * MIN), "/home/test");
+  expect((await freshnessTick(deps(T0 + 30 * MIN), "/home/test")).map((a) => a.kind)).toEqual(["working-while-paused"]);
+  expect(statusOf((await stored()) as Lane)).toBe("paused");
+});
+
